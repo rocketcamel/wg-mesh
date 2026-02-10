@@ -1,2 +1,2 @@
-dev:
-  bacon dev
+dev bin="registry":
+  bacon dev -- --bin {{bin}}

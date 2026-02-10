@@ -30,6 +30,8 @@ pub enum ErrorKind {
         #[source]
         source: serde_json::Error,
     },
+    #[error("error handling ws")]
+    Ws(#[source] actix_web::Error),
 }
 
 impl ResponseError for Error {

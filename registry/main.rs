@@ -1,25 +1,36 @@
 mod endpoints;
 mod error;
+mod storage;
 mod utils;
 
 use actix_web::{App, HttpServer, web};
 use console::style;
 use thiserror_ext::AsReport;
+use tokio::sync::broadcast;
 use tracing::level_filters::LevelFilter;
 use tracing_subscriber::{
     EnvFilter, fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
-use crate::error::Error;
+use crate::storage::{Storage, get_storage_from_env};
+use crate::utils::Peer;
 
-struct AppState {
-    valkey_client: redis::Client,
+#[derive(Clone, Debug)]
+pub struct PeerUpdate {
+    pub peer: Peer,
+}
+
+pub struct AppState {
+    pub peer_updates: broadcast::Sender<PeerUpdate>,
+    pub storage: Storage,
 }
 
 async fn run() -> crate::error::Result<()> {
+    let (peer_tx, _) = broadcast::channel::<PeerUpdate>(100);
+
     let app_state = web::Data::new(AppState {
-        valkey_client: redis::Client::open("redis://127.0.0.1:6379/")
-            .map_err(|e| Error::valkey_connect(e, "127.0.0.1:6379/".to_string()))?,
+        storage: get_storage_from_env()?,
+        peer_updates: peer_tx,
     });
 
     HttpServer::new(move || {
@@ -36,6 +47,7 @@ async fn run() -> crate::error::Result<()> {
                 web::post().to(endpoints::register::register_peer),
             )
             .route("/peers", web::get().to(endpoints::peers::get_peers))
+            .route("/ws/peers", web::get().to(endpoints::ws::peers::peers))
     })
     .bind(("0.0.0.0", 8080))?
     .run()
