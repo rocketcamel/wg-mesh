@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use actix_web::{HttpResponse, web};
+use ipnetwork::IpNetwork;
 use redis::AsyncTypedCommands;
 
 use crate::{
     AppState,
     error::{Error, Result},
+    utils::Peer,
 };
 
 pub async fn get_peers(app_state: web::Data<AppState>) -> Result<HttpResponse> {
@@ -23,14 +25,25 @@ pub async fn get_peers(app_state: web::Data<AppState>) -> Result<HttpResponse> {
         pipe.hgetall(format!("peer:{key}"));
     }
 
-    let mut peers = pipe
+    let peers: Vec<Peer> = pipe
         .query_async::<Vec<HashMap<String, String>>>(&mut conn)
         .await
-        .map_err(|e| Error::get_peer(e))?;
+        .map_err(|e| Error::get_peer(e))?
+        .into_iter()
+        .zip(keys.iter())
+        .map(|(peer, key)| {
+            let allowed_ips: Vec<IpNetwork> = peer
+                .get("allowed_ips")
+                .map(|s| serde_json::from_str(s).unwrap_or_default())
+                .unwrap_or_default();
 
-    for (key, peer) in keys.iter().zip(peers.iter_mut()) {
-        peer.insert("public_key".to_string(), key.clone());
-    }
+            Peer {
+                public_key: key.clone(),
+                public_ip: peer.get("public_ip").unwrap().to_string(),
+                allowed_ips,
+            }
+        })
+        .collect();
 
     Ok(HttpResponse::Ok().json(peers))
 }
