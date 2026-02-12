@@ -27,7 +27,7 @@ pub async fn peers(
                 return Ok(res);
             }
             tracing::info!(
-                "sent initial peer list ({} peers) to new WebSocket client",
+                "sent initial peer list ({} peers) to new client",
                 initial_peers.len()
             );
         }
@@ -72,10 +72,10 @@ pub async fn peers(
                             if session.text(json).await.is_err() {
                                 break;
                             }
-                            tracing::info!("sent peer update to WebSocket client: {}", peer_update.peer.public_key);
+                            tracing::info!("sent peer update to client: {}", peer_update.peer.public_key);
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            tracing::warn!("WebSocket client lagged, missed {} updates", n);
+                            tracing::warn!("client lagged, missed {} updates", n);
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                             break;
@@ -85,7 +85,7 @@ pub async fn peers(
             }
         }
         session.close(None).await.ok();
-        tracing::info!("WebSocket client disconnected");
+        tracing::info!("client disconnected");
     });
 
     Ok(res)
