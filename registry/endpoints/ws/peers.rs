@@ -2,6 +2,7 @@ use crate::{AppState, error::Error, storage::StorageImpl};
 use actix_web::{HttpRequest, HttpResponse, rt, web};
 use actix_ws::AggregatedMessage;
 use futures_util::StreamExt;
+use tokio::sync::broadcast::error::RecvError;
 
 pub async fn peers(
     req: HttpRequest,
@@ -22,13 +23,13 @@ pub async fn peers(
                 return Ok(res);
             }
             tracing::info!(
-                "sent initial peer list ({} peers) to new WebSocket client",
+                "sent initial peer list ({} peers) to new client",
                 initial_peers.len()
             );
         }
         Err(e) => {
             tracing::warn!("failed to fetch initial peers: {:?}", e);
-            let _ = session.close(None).await;
+            session.close(None).await.ok();
             return Ok(res);
         }
     }
@@ -67,20 +68,20 @@ pub async fn peers(
                             if session.text(json).await.is_err() {
                                 break;
                             }
-                            tracing::info!("sent peer update to WebSocket client: {}", peer_update.peer.public_key);
+                            tracing::info!("sent peer update to client: {}", peer_update.peer.public_key);
                         }
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
-                            tracing::warn!("WebSocket client lagged, missed {} updates", n);
+                        Err(RecvError::Lagged(n)) => {
+                            tracing::warn!("client lagged, missed {} updates", n);
                         }
-                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        Err(RecvError::Closed) => {
                             break;
                         }
                     }
                 }
             }
         }
-        let _ = session.close(None).await;
-        tracing::info!("WebSocket client disconnected");
+        session.close(None).await.ok();
+        tracing::info!("client disconnected");
     });
 
     Ok(res)
