@@ -3,10 +3,11 @@ use std::net::IpAddr;
 
 use ipnetwork::IpNetwork;
 use redis::AsyncTypedCommands;
+use registry::Peer;
 use serde::Deserialize;
 
 use crate::error::Result;
-use crate::utils::{Peer, WireguardPublicKey};
+use crate::utils::WireguardPublicKey;
 use crate::{error::Error, storage::StorageImpl};
 
 pub struct ValkeyStorage {

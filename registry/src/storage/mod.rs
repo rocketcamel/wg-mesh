@@ -1,10 +1,8 @@
-use crate::{
-    error::{Error, Result},
-    utils::Peer,
-};
+use crate::error::{Error, Result};
 
 mod valkey;
 
+use registry::Peer;
 pub use valkey::RegisterRequest;
 
 pub enum Storage {

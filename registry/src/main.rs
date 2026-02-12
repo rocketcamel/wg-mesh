@@ -1,10 +1,12 @@
 mod endpoints;
 mod error;
 mod storage;
+mod types;
 mod utils;
 
 use actix_web::{App, HttpServer, web};
 use console::style;
+use registry::Peer;
 use thiserror_ext::AsReport;
 use tokio::sync::broadcast;
 use tracing::level_filters::LevelFilter;
@@ -13,7 +15,6 @@ use tracing_subscriber::{
 };
 
 use crate::storage::{Storage, get_storage_from_env};
-use crate::utils::Peer;
 
 #[derive(Clone, Debug)]
 pub struct PeerUpdate {

@@ -37,6 +37,7 @@ pub enum ErrorKind {
 impl ResponseError for Error {
     fn error_response(&self) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
         match self.inner() {
+            ErrorKind::Ws(e) => e.error_response(),
             _ => HttpResponse::InternalServerError().finish(),
         }
     }

@@ -2,9 +2,9 @@ use crate::{
     AppState, PeerUpdate,
     error::Result,
     storage::{RegisterRequest, StorageImpl},
-    utils::Peer,
 };
 use actix_web::{HttpResponse, web};
+use registry::Peer;
 
 pub async fn register_peer(
     app_state: web::Data<AppState>,
