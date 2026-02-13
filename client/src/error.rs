@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use thiserror::Error;
 use thiserror_ext::{Box, Construct};
 use tokio_tungstenite::tungstenite;
@@ -15,6 +17,24 @@ pub enum ErrorKind {
     WsRead(#[source] tungstenite::Error),
     #[error("error deserializing json")]
     DeserializeJson(#[source] serde_json::Error),
+    #[error("error reading configuration at {path}")]
+    ReadConfig {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("error deserializing toml")]
+    DeserializeToml(#[from] toml::de::Error),
+    #[error("invalid url")]
+    Url(#[from] url::ParseError),
+    #[error("invalid url scheme: {url}")]
+    UrlScheme { url: String },
+    #[error("error writing wireguard config to {path}")]
+    WriteConfig {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 pub type Result<T> = core::result::Result<T, Error>;
