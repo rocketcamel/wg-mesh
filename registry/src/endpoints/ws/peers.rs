@@ -67,7 +67,7 @@ pub async fn peers(
                 update = peer_rx.recv() => {
                     match update {
                         Ok(peer_update) => {
-                            let json = serde_json::to_string(&peer_update.peer)
+                            let json = serde_json::to_string(&PeerMessage::PeerUpdate { peer: peer_update.peer.clone() })
                                 .unwrap_or_else(|_| "{}".to_string());
                             if session.text(json).await.is_err() {
                                 break;

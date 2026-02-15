@@ -1,10 +1,16 @@
+mod app_state;
 mod config;
+mod discovery;
 mod error;
 mod wireguard;
 
+use std::{fs::OpenOptions, io::Write, net::IpAddr, os::unix::fs::OpenOptionsExt};
+
 use console::style;
 use futures::StreamExt;
+use ipnetwork::IpNetwork;
 use registry::{Peer, PeerMessage};
+use serde::Serialize;
 use thiserror_ext::AsReport;
 use tokio_tungstenite::tungstenite::Message;
 use tracing::level_filters::LevelFilter;
@@ -14,12 +20,22 @@ use tracing_subscriber::{
 use url::Url;
 
 use crate::{
+    app_state::{AppState, Data},
     config::{Config, InterfaceConfig, wg_config_path},
+    discovery::{PublicEndpoint, discover_public_endpoint},
     error::{Error, Result},
 };
 
-fn parse_url(input: &str) -> Result<String> {
-    let url = Url::parse(&input)?.join("/ws/peers")?;
+#[derive(Serialize)]
+pub struct RegisterRequest {
+    pub public_ip: IpAddr,
+    pub public_key: String,
+    pub port: String,
+    pub allowed_ips: Vec<IpNetwork>,
+}
+
+fn parse_ws_url(input: &Url) -> Result<String> {
+    let url = input.join("/ws/peers")?;
     if url.scheme() != "ws" && url.scheme() != "wss" {
         return Err(Error::url_scheme(url.to_string()));
     }
@@ -29,19 +45,60 @@ fn parse_url(input: &str) -> Result<String> {
 fn write_wg_config(interface: &InterfaceConfig, peers: &[Peer]) -> Result<()> {
     let path = wg_config_path();
     let config = wireguard::generate_config(interface, peers);
-    std::fs::write(&path, config).map_err(|e| Error::write_config(e, &path))?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(|e| Error::write_config(e, &path))?;
+    file.write_all(config.as_bytes())
+        .map_err(|e| Error::write_config(e, &path))?;
     tracing::info!("wrote {} with {} peers", path.display(), peers.len());
+    Ok(())
+}
+
+async fn register_self(
+    app_state: Data<AppState>,
+    endpoint: &PublicEndpoint,
+    config: &InterfaceConfig,
+    url: &str,
+) -> Result<()> {
+    app_state
+        .reqwest_client
+        .post(url)
+        .json(&RegisterRequest {
+            public_key: config.public_key.clone(),
+            public_ip: endpoint.ip,
+            port: endpoint.port.to_string(),
+            allowed_ips: config.allowed_ips.clone(),
+        })
+        .send()
+        .await?
+        .error_for_status()?;
+
     Ok(())
 }
 
 async fn run() -> crate::error::Result<()> {
     let config = Config::load()?;
-    let url = parse_url(&config.server.url)?;
-    let (ws_stream, response) = tokio_tungstenite::connect_async(&url)
+    let ws_url = &config.server.ws_url;
+    let (ws_stream, response) = tokio_tungstenite::connect_async(ws_url)
         .await
-        .map_err(|e| Error::ws_connect(e, &url))?;
+        .map_err(|e| Error::ws_connect(e, ws_url))?;
     let (_, mut read) = ws_stream.split();
+    let app_state = Data::new(AppState {
+        reqwest_client: reqwest::Client::new(),
+    });
     tracing::info!("connected, response: {:?}", response.status());
+    let endpoint = discover_public_endpoint(config.interface.listen_port).await?;
+    register_self(
+        app_state.clone(),
+        &endpoint,
+        &config.interface,
+        &format!("{}/register", &config.server.url),
+    )
+    .await?;
 
     let mut peers: Vec<Peer> = Vec::new();
 

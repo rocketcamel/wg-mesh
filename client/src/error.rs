@@ -35,6 +35,16 @@ pub enum ErrorKind {
         #[source]
         source: std::io::Error,
     },
+    #[error("STUN discovery failed: {message}")]
+    StunDiscovery { message: String },
+    #[error("HTTP IP discovery failed")]
+    HttpDiscovery(#[source] reqwest::Error),
+    #[error("failed to parse IP address from HTTP response: {body}")]
+    ParseIp { body: String },
+    #[error("all discovery methods failed")]
+    DiscoveryFailed,
+    #[error("error with request")]
+    Reqwest(#[from] reqwest::Error),
 }
 
 pub type Result<T> = core::result::Result<T, Error>;

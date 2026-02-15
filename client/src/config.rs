@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use crate::error::{Error, Result};
+use ipnetwork::IpNetwork;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -11,11 +12,14 @@ pub struct Config {
 #[derive(Deserialize)]
 pub struct InterfaceConfig {
     pub private_key: String,
+    pub public_key: String,
     pub listen_port: u16,
     pub address: String,
+    pub allowed_ips: Vec<IpNetwork>,
 }
 #[derive(Deserialize)]
 pub struct ServerConfig {
+    pub ws_url: String,
     pub url: String,
 }
 

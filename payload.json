@@ -1,0 +1,6 @@
+{
+  "public_key": "pKkl30tba29FG86wuaC0KrpSHMr1tSOujikHFbx75BM=",
+  "public_ip": "75.157.238.86",
+  "port": "51820",
+  "allowed_ips": ["10.100.0.1/32"]
+}
