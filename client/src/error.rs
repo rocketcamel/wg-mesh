@@ -29,12 +29,6 @@ pub enum ErrorKind {
     Url(#[from] url::ParseError),
     #[error("invalid url scheme: {url}")]
     UrlScheme { url: String },
-    #[error("error writing wireguard config to {path}")]
-    WriteConfig {
-        path: PathBuf,
-        #[source]
-        source: std::io::Error,
-    },
     #[error("STUN discovery failed: {message}")]
     StunDiscovery { message: String },
     #[error("HTTP IP discovery failed")]
@@ -45,6 +39,53 @@ pub enum ErrorKind {
     DiscoveryFailed,
     #[error("error with request")]
     Reqwest(#[from] reqwest::Error),
+    #[error("invalid base64 key: {context}")]
+    InvalidKey { context: String },
+    #[error("error creating WireGuard interface {interface}")]
+    CreateInterface {
+        interface: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("error configuring WireGuard device {interface}")]
+    ConfigureDevice {
+        interface: String,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("error with netlink operation: {context}")]
+    Netlink { context: String },
+    #[error("error setting interface address")]
+    SetAddress {
+        #[source]
+        source: rtnetlink::Error,
+    },
+    #[error("error bringing interface up")]
+    SetLinkUp {
+        #[source]
+        source: rtnetlink::Error,
+    },
+    #[error("error getting interface index for {interface}")]
+    GetInterface { interface: String },
+    #[error("registration failed")]
+    Registration {
+        #[source]
+        source: reqwest::Error,
+    },
+    #[error("error deregistering device {public_key}")]
+    Deregister {
+        public_key: String,
+        #[source]
+        source: reqwest::Error,
+    },
+    #[error("registration failed with status {status}: {body}")]
+    RegistrationStatus { status: u16, body: String },
+    #[error("error deleting interface")]
+    DeleteInterface {
+        name: String,
+        #[source]
+        source: rtnetlink::Error,
+    },
 }
 
 pub type Result<T> = core::result::Result<T, Error>;

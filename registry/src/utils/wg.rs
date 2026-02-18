@@ -1,5 +1,5 @@
 use base64::Engine;
-use serde::{Deserialize, de};
+use serde::{de, Deserialize};
 
 #[derive(Clone)]
 pub struct WireguardPublicKey(String);

@@ -4,13 +4,14 @@ use crate::{
     storage::{RegisterRequest, StorageImpl},
 };
 use actix_web::{HttpResponse, web};
-use registry::Peer;
+use registry::{Peer, RegisterResponse};
 
 pub async fn register_peer(
     app_state: web::Data<AppState>,
     request: web::Json<RegisterRequest>,
 ) -> Result<HttpResponse> {
-    app_state.storage.register_device(&request).await?;
+    let mesh_ip = app_state.storage.register_device(&request).await?;
+
     app_state
         .peer_updates
         .send(PeerUpdate {
@@ -18,10 +19,11 @@ pub async fn register_peer(
                 public_key: request.public_key.as_str().to_string(),
                 public_ip: request.public_ip.to_string(),
                 port: request.port.clone(),
+                mesh_ip,
                 allowed_ips: request.allowed_ips.clone(),
             },
         })
-        .unwrap();
+        .ok();
 
-    Ok(HttpResponse::Ok().finish())
+    Ok(HttpResponse::Ok().json(RegisterResponse { mesh_ip }))
 }

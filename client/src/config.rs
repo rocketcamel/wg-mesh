@@ -4,19 +4,33 @@ use crate::error::{Error, Result};
 use ipnetwork::IpNetwork;
 use serde::Deserialize;
 
+pub const DEFAULT_KEEPALIVE: u16 = 25;
+pub const INTERFACE_NAME: &str = "mesh0";
+
 #[derive(Deserialize)]
 pub struct Config {
     pub interface: InterfaceConfig,
     pub server: ServerConfig,
 }
+
 #[derive(Deserialize)]
 pub struct InterfaceConfig {
     pub private_key: String,
     pub public_key: String,
+    #[serde(default = "default_listen_port")]
     pub listen_port: u16,
-    pub address: String,
-    pub allowed_ips: Vec<IpNetwork>,
+    #[serde(default = "default_keepalive")]
+    pub persistent_keepalive: u16,
+    pub allowed_ips: Option<Vec<IpNetwork>>,
 }
+
+fn default_listen_port() -> u16 {
+    51820
+}
+fn default_keepalive() -> u16 {
+    DEFAULT_KEEPALIVE
+}
+
 #[derive(Deserialize)]
 pub struct ServerConfig {
     pub ws_url: String,
@@ -35,8 +49,4 @@ pub fn base_path() -> PathBuf {
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("wg-mesh")
-}
-
-pub fn wg_config_path() -> PathBuf {
-    PathBuf::from("/etc/wireguard/mesh0.conf")
 }

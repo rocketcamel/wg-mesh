@@ -1,4 +1,5 @@
 use actix_web::{HttpResponse, ResponseError};
+use serde::Serialize;
 use thiserror::Error;
 use thiserror_ext::{Box, Construct};
 
@@ -32,12 +33,30 @@ pub enum ErrorKind {
     },
     #[error("error handling ws")]
     Ws(#[source] actix_web::Error),
+    #[error("IP pool exhausted: no available addresses in {pool}")]
+    IpPoolExhausted { pool: String },
+    #[error("error deregistering device {public_key}")]
+    DeregisterDevice {
+        public_key: String,
+        #[source]
+        source: redis::RedisError,
+    },
+    #[error("error invalid key")]
+    InvalidKey(String),
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
 }
 
 impl ResponseError for Error {
     fn error_response(&self) -> actix_web::HttpResponse<actix_web::body::BoxBody> {
         match self.inner() {
             ErrorKind::Ws(e) => e.error_response(),
+            ErrorKind::InvalidKey(key) => HttpResponse::BadRequest().json(ErrorResponse {
+                error: format!("error invalid key: {key}"),
+            }),
             _ => HttpResponse::InternalServerError().finish(),
         }
     }

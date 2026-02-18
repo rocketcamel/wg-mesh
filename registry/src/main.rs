@@ -47,6 +47,10 @@ async fn run() -> crate::error::Result<()> {
                 "/register",
                 web::post().to(endpoints::register::register_peer),
             )
+            .route(
+                "/deregister",
+                web::delete().to(endpoints::deregister::deregister),
+            )
             .route("/peers", web::get().to(endpoints::peers::get_peers))
             .route("/ws/peers", web::get().to(endpoints::ws::peers::peers))
     })

@@ -1,3 +1,5 @@
+use std::net::Ipv4Addr;
+
 use crate::error::{Error, Result};
 
 mod valkey;
@@ -10,12 +12,13 @@ pub enum Storage {
 }
 
 pub trait StorageImpl {
-    async fn register_device(&self, request: &RegisterRequest) -> Result<()>;
+    async fn register_device(&self, request: &RegisterRequest) -> Result<Ipv4Addr>;
+    async fn deregister_device(&self, public_key: &str) -> Result<()>;
     async fn get_peers(&self) -> Result<Vec<Peer>>;
 }
 
 impl StorageImpl for Storage {
-    async fn register_device(&self, request: &RegisterRequest) -> Result<()> {
+    async fn register_device(&self, request: &RegisterRequest) -> Result<Ipv4Addr> {
         match self {
             Self::Valkey(storage) => storage.register_device(request).await,
         }
@@ -24,6 +27,12 @@ impl StorageImpl for Storage {
     async fn get_peers(&self) -> Result<Vec<Peer>> {
         match self {
             Self::Valkey(storage) => storage.get_peers().await,
+        }
+    }
+
+    async fn deregister_device(&self, public_key: &str) -> Result<()> {
+        match self {
+            Self::Valkey(storage) => storage.deregister_device(public_key).await,
         }
     }
 }
