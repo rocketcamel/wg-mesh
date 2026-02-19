@@ -4,6 +4,7 @@ use std::net::{IpAddr, Ipv4Addr};
 use futures::TryFutureExt;
 use ipnetwork::IpNetwork;
 use redis::AsyncTypedCommands;
+use redis::aio::MultiplexedConnection;
 use registry::Peer;
 use serde::Deserialize;
 
@@ -29,12 +30,7 @@ pub struct RegisterRequest {
 
 impl StorageImpl for ValkeyStorage {
     async fn register_device(&self, request: &RegisterRequest) -> Result<Ipv4Addr> {
-        let mut conn = self
-            .valkey_client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| Error::valkey_get_connection(e))?;
-
+        let mut conn = self.get_connection().await?;
         let peer_key = format!("peer:{}", request.public_key.as_str());
 
         let existing_mesh_ip: Option<String> = conn
@@ -85,11 +81,7 @@ impl StorageImpl for ValkeyStorage {
     }
 
     async fn deregister_device(&self, public_key: &str) -> Result<()> {
-        let mut conn = self
-            .valkey_client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| Error::valkey_get_connection(e))?;
+        let mut conn = self.get_connection().await?;
         let hash_key = format!("peer:{public_key}");
         conn.srem("peers", public_key)
             .map_err(|e| Error::deregister_device(e, public_key))
@@ -104,21 +96,13 @@ impl StorageImpl for ValkeyStorage {
     }
 
     async fn get_peers(&self) -> Result<Vec<Peer>> {
-        let mut conn = self
-            .valkey_client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|e| Error::valkey_get_connection(e))?;
-        let keys: HashSet<String> = conn
-            .smembers("peers")
-            .await
-            .map_err(|e| Error::get_peer(e))?;
+        let mut conn = self.get_connection().await?;
+        let keys: Vec<String> = self.get_public_keys().await?.into_iter().collect();
 
         if keys.is_empty() {
             return Ok(vec![]);
         }
 
-        let keys: Vec<String> = keys.into_iter().collect();
         let mut pipe = redis::pipe();
         for key in keys.iter() {
             pipe.hgetall(format!("peer:{key}"));
@@ -152,15 +136,23 @@ impl StorageImpl for ValkeyStorage {
 }
 
 impl ValkeyStorage {
+    async fn get_connection(&self) -> Result<MultiplexedConnection> {
+        self.valkey_client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|e| Error::valkey_get_connection(e))
+    }
+
+    async fn get_public_keys(&self) -> Result<HashSet<String>> {
+        let mut conn = self.get_connection().await?;
+        conn.smembers("peers").await.map_err(|e| Error::get_peer(e))
+    }
+
     async fn allocate_mesh_ip(
         &self,
         conn: &mut redis::aio::MultiplexedConnection,
     ) -> Result<Ipv4Addr> {
-        let keys: HashSet<String> = conn
-            .smembers("peers")
-            .await
-            .map_err(|e| Error::get_peer(e))?;
-
+        let keys = self.get_public_keys().await?;
         let mut assigned_ips: HashSet<Ipv4Addr> = HashSet::new();
 
         if !keys.is_empty() {
