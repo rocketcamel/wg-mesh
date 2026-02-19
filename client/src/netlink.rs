@@ -1,10 +1,12 @@
 use std::net::Ipv4Addr;
 
 use futures::TryStreamExt;
+use ipnetwork::IpNetwork;
 use rtnetlink::Handle;
 
 use crate::config::INTERFACE_NAME;
 use crate::error::{Error, Result};
+use crate::state::{AppState, Data};
 
 async fn get_interface_index(handle: &Handle, name: &str) -> Result<u32> {
     let mut links = handle.link().get().match_name(name.to_string()).execute();
@@ -43,6 +45,48 @@ pub async fn add_address(handle: &Handle, addr: Ipv4Addr, prefix_len: u8) -> Res
         }
         Err(e) => Err(Error::set_address(e)),
     }
+}
+
+pub async fn add_routes(handle: &Handle, routes: &[IpNetwork]) -> Result<()> {
+    let index = get_interface_index(handle, INTERFACE_NAME).await?;
+
+    for route in routes {
+        let result = match route {
+            IpNetwork::V4(network) => {
+                handle
+                    .route()
+                    .add()
+                    .v4()
+                    .destination_prefix(network.ip(), network.prefix())
+                    .output_interface(index)
+                    .execute()
+                    .await
+            }
+            IpNetwork::V6(network) => {
+                handle
+                    .route()
+                    .add()
+                    .v6()
+                    .destination_prefix(network.ip(), network.prefix())
+                    .output_interface(index)
+                    .execute()
+                    .await
+            }
+        };
+
+        match result {
+            Ok(()) => {}
+            Err(rtnetlink::Error::NetlinkError(e)) if e.raw_code() == -libc::EEXIST => {
+                tracing::debug!(
+                    destination = %route,
+                    "route already exists"
+                );
+            }
+            Err(e) => return Err(Error::add_route(e, route.to_string())),
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn set_link_up(handle: &Handle) -> Result<()> {

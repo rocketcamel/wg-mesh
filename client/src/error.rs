@@ -27,8 +27,6 @@ pub enum ErrorKind {
     DeserializeToml(#[from] toml::de::Error),
     #[error("invalid url")]
     Url(#[from] url::ParseError),
-    #[error("invalid url scheme: {url}")]
-    UrlScheme { url: String },
     #[error("STUN discovery failed: {message}")]
     StunDiscovery { message: String },
     #[error("HTTP IP discovery failed")]
@@ -83,6 +81,12 @@ pub enum ErrorKind {
     #[error("error deleting interface")]
     DeleteInterface {
         name: String,
+        #[source]
+        source: rtnetlink::Error,
+    },
+    #[error("error adding route to {destination}")]
+    AddRoute {
+        destination: String,
         #[source]
         source: rtnetlink::Error,
     },

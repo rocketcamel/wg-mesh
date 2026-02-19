@@ -2,6 +2,7 @@ mod config;
 mod discovery;
 mod error;
 mod netlink;
+mod state;
 mod wireguard;
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -10,6 +11,7 @@ use console::style;
 use futures::{StreamExt, TryFutureExt, stream::SplitStream};
 use ipnetwork::IpNetwork;
 use registry::{Peer, PeerMessage, RegisterResponse};
+use rtnetlink::Handle;
 use serde::Serialize;
 use thiserror_ext::AsReport;
 use tokio::{
@@ -26,6 +28,7 @@ use crate::{
     config::{Config, INTERFACE_NAME},
     discovery::{PublicEndpoint, discover_public_endpoint},
     error::{Error, Result},
+    state::{AppState, Data},
 };
 
 #[derive(Serialize)]
@@ -42,12 +45,6 @@ async fn register_self(
     config: &Config,
 ) -> Result<Ipv4Addr> {
     let url = format!("{}/register", &config.server.url);
-
-    tracing::info!(
-        public_ip = %endpoint.ip,
-        port = endpoint.port,
-        "registering with registry"
-    );
 
     let response = client
         .post(&url)
@@ -77,6 +74,7 @@ async fn register_self(
     Ok(register_response.mesh_ip)
 }
 
+#[allow(dead_code)]
 async fn deregister_self(client: &reqwest::Client, config: &Config) -> Result<()> {
     let url = format!(
         "{}/deregister?public_key={}",
@@ -92,9 +90,13 @@ async fn deregister_self(client: &reqwest::Client, config: &Config) -> Result<()
     Ok(())
 }
 
-fn configure_peer(peer: &Peer, local_public_key: &str, keepalive: u16) -> Result<()> {
+async fn configure_peer(
+    handle: &Handle,
+    peer: &Peer,
+    local_public_key: &str,
+    keepalive: u16,
+) -> Result<()> {
     if peer.public_key == local_public_key {
-        tracing::debug!(peer_key = %peer.public_key, "skipping self");
         return Ok(());
     }
 
@@ -113,6 +115,7 @@ fn configure_peer(peer: &Peer, local_public_key: &str, keepalive: u16) -> Result
     allowed_ips.extend(peer.allowed_ips.iter().cloned());
 
     wireguard::configure_peer(&peer_key, Some(endpoint), &allowed_ips, Some(keepalive))?;
+    netlink::add_routes(handle, &allowed_ips).await?;
 
     tracing::info!(
         peer_key = %peer.public_key,
@@ -124,9 +127,14 @@ fn configure_peer(peer: &Peer, local_public_key: &str, keepalive: u16) -> Result
     Ok(())
 }
 
-fn configure_all_peers(peers: &[Peer], local_public_key: &str, keepalive: u16) -> Result<()> {
+async fn configure_all_peers(
+    handle: &Handle,
+    peers: &[Peer],
+    local_public_key: &str,
+    keepalive: u16,
+) -> Result<()> {
     for peer in peers {
-        if let Err(e) = configure_peer(peer, local_public_key, keepalive) {
+        if let Err(e) = configure_peer(handle, peer, local_public_key, keepalive).await {
             tracing::warn!(peer_key = %peer.public_key, error = %e, "failed to configure peer");
         }
     }
@@ -134,42 +142,49 @@ fn configure_all_peers(peers: &[Peer], local_public_key: &str, keepalive: u16) -
 }
 
 async fn events(
+    app_state: Data<AppState>,
     read: &mut SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     config: &Config,
 ) -> Result<()> {
     while let Some(msg) = read.next().await {
-        match msg.map_err(Error::ws_read)? {
-            Message::Text(text) => {
+        match msg {
+            Ok(Message::Text(text)) => {
                 let server_msg: PeerMessage =
                     serde_json::from_str(&text).map_err(Error::deserialize_json)?;
 
                 match server_msg {
                     PeerMessage::HydratePeers { peers } => {
-                        tracing::info!(count = peers.len(), "Received initial peer list");
+                        tracing::info!(count = peers.len(), "received initial peer list");
                         configure_all_peers(
+                            &app_state.nl_handle,
                             &peers,
                             &config.interface.public_key,
                             config.interface.persistent_keepalive,
-                        )?;
+                        )
+                        .await?;
                     }
                     PeerMessage::PeerUpdate { peer } => {
                         tracing::info!(
                             peer_key = %peer.public_key,
                             mesh_ip = %peer.mesh_ip,
-                            "Received peer update"
+                            "received peer update"
                         );
                         configure_peer(
+                            &app_state.nl_handle,
                             &peer,
                             &config.interface.public_key,
                             config.interface.persistent_keepalive,
-                        )?;
+                        )
+                        .await?;
                     }
                 }
             }
-            Message::Ping(_) => {}
-            Message::Pong(_) => {}
-            Message::Close(_) => {
+            Ok(Message::Close(_)) => {
                 tracing::warn!("connection closed by server");
+                break;
+            }
+            Err(tokio_tungstenite::tungstenite::Error::Protocol(e)) => {
+                tracing::error!(error = %e.as_report(), "protocol error");
                 break;
             }
             _ => {}
@@ -187,43 +202,32 @@ async fn run() -> Result<()> {
         public_port = endpoint.port,
         "public endpoint"
     );
-    let http_client = reqwest::Client::new();
-    let mesh_ip = register_self(&http_client, &endpoint, &config).await?;
+    let app_state = Data::new(AppState {
+        reqwest_client: reqwest::Client::new(),
+        nl_handle: netlink::connect().await?.0,
+    });
+    let mesh_ip = register_self(&app_state.reqwest_client, &endpoint, &config).await?;
     wireguard::create_interface()?;
     wireguard::configure_interface(&private_key, config.interface.listen_port)?;
 
-    let (nl_handle, _nl_task) = netlink::connect().await?;
-    netlink::add_address(&nl_handle, mesh_ip, 32).await?;
-    netlink::set_link_up(&nl_handle).await?;
-
-    tracing::info!(
-        interface = INTERFACE_NAME,
-        mesh_ip = %mesh_ip,
-        "interface configured and up"
-    );
+    let nl_handle = &app_state.nl_handle;
+    netlink::add_address(nl_handle, mesh_ip, 32).await?;
+    netlink::set_link_up(nl_handle).await?;
 
     let ws_url = &config.server.ws_url;
-
-    let (ws_stream, response) = tokio_tungstenite::connect_async(ws_url)
+    let (ws_stream, _) = tokio_tungstenite::connect_async(ws_url)
         .await
         .map_err(|e| Error::ws_connect(e, ws_url))?;
-
-    tracing::info!(
-        status = ?response.status(),
-        "connected to registry WebSocket"
-    );
 
     let (_, mut read) = ws_stream.split();
 
     tokio::select! {
-        receiver = events(&mut read, &config) => receiver?,
+        receiver = events(app_state.clone(), &mut read, &config) => receiver?,
         _ = signal::ctrl_c() => {
         },
         _ = on_shutdown() => {}
     };
-    tracing::debug!("gracefully shutting down");
-    netlink::delete_interface(&nl_handle, INTERFACE_NAME).await?;
-    deregister_self(&http_client, &config).await?;
+    netlink::delete_interface(nl_handle, INTERFACE_NAME).await?;
     tracing::info!("connection closed");
     Ok(())
 }
