@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::{
     Router,
     extract::{MatchedPath, Request},
-    routing::get,
+    routing::{get, post},
 };
 use console::style;
 use thiserror_ext::AsReport;
@@ -36,7 +36,7 @@ async fn run() -> Result<()> {
             "/",
             get(|| async { concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")) }),
         )
-        .route("/register", get(endpoints::register::register_device))
+        .route("/register", post(endpoints::register::register_device))
         .layer(
             TraceLayer::new_for_http().make_span_with(|request: &Request<_>| {
                 let matched_path = request

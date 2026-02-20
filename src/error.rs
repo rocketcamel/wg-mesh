@@ -1,4 +1,5 @@
-use axum::{http::StatusCode, response::IntoResponse};
+use axum::{Json, http::StatusCode, response::IntoResponse};
+use serde::Serialize;
 use thiserror::Error;
 use thiserror_ext::{AsReport, Box, Construct};
 
@@ -18,12 +19,37 @@ pub enum ErrorKind {
         #[source]
         source: redis::RedisError,
     },
+    #[error("json serialize error")]
+    SerializeJson(#[from] serde_json::Error),
+    #[error("error getting peer {public_key}")]
+    GetPeer {
+        public_key: String,
+        #[source]
+        source: redis::RedisError,
+    },
+    #[error("error adding peer {public_key}")]
+    AddPeer {
+        public_key: String,
+        #[source]
+        source: redis::RedisError,
+    },
+    #[error("error invalid key")]
+    InvalidKey(#[from] wireguard_control::InvalidKey),
+}
+
+#[derive(Serialize)]
+struct ErrorResponse {
+    error: String,
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!(error = %self.as_report(), "error with request");
         match self.inner() {
+            ErrorKind::InvalidKey(_) => Json(ErrorResponse {
+                error: "invalid public key".to_string(),
+            })
+            .into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }
     }

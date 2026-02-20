@@ -1,9 +1,11 @@
 mod valkey;
 
+pub use valkey::RegisterRequest;
+
 use crate::error::{Error, Result};
 
 pub trait StorageImpl {
-    async fn register_device(&self) -> Result<()>;
+    async fn register_device(&self, req: &RegisterRequest) -> Result<()>;
 }
 
 pub enum Storage {
@@ -11,9 +13,9 @@ pub enum Storage {
 }
 
 impl StorageImpl for Storage {
-    async fn register_device(&self) -> Result<()> {
+    async fn register_device(&self, req: &RegisterRequest) -> Result<()> {
         match self {
-            Self::Valkey(storage) => storage.register_device().await,
+            Self::Valkey(storage) => storage.register_device(req).await,
         }
     }
 }
