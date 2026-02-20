@@ -1,7 +1,5 @@
 [jobs.dev]
 command = ["cargo", "run"]
-need_stdout = true
 background = false
+need_stdout = true
 on_change_strategy = "kill_then_restart"
-kill = ["kill", "-s", "INT"]
-watch = ["registry/", "client/", "Cargo.toml"]

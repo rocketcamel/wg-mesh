@@ -1,3 +1,15 @@
-[workspace]
-members = ["registry", "client"]
-resolver = "3"
+[package]
+name = "wg-mesh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+axum = "0.8.8"
+console = "0.16.2"
+redis = { version = "1.0.4", features = ["connection-manager", "tokio-comp"] }
+thiserror = "2.0.18"
+thiserror-ext = "0.3.0"
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread"] }
+tower-http = { version = "0.6.8", features = ["trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
