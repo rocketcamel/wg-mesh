@@ -5,7 +5,7 @@ pub use valkey::RegisterRequest;
 use crate::error::{Error, Result};
 
 pub trait StorageImpl {
-    async fn register_device(&self, req: &RegisterRequest) -> Result<()>;
+    async fn register_device(&self, req: &RegisterRequest) -> Result<String>;
 }
 
 pub enum Storage {
@@ -13,7 +13,7 @@ pub enum Storage {
 }
 
 impl StorageImpl for Storage {
-    async fn register_device(&self, req: &RegisterRequest) -> Result<()> {
+    async fn register_device(&self, req: &RegisterRequest) -> Result<String> {
         match self {
             Self::Valkey(storage) => storage.register_device(req).await,
         }

@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use axum::{Json, http::StatusCode, response::IntoResponse};
 use serde::Serialize;
 use thiserror::Error;
@@ -35,6 +37,12 @@ pub enum ErrorKind {
     },
     #[error("error invalid key")]
     InvalidKey(#[from] wireguard_control::InvalidKey),
+    #[error("error invoking valkey script")]
+    ValkeyScript(#[source] redis::RedisError),
+    #[error("error subnet exhausted {0}")]
+    ExhaustedSubnet(String),
+    #[error("invalid json")]
+    InvalidJson(#[source] axum::extract::rejection::JsonRejection),
 }
 
 #[derive(Serialize)]
@@ -46,9 +54,27 @@ impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         tracing::error!(error = %self.as_report(), "error with request");
         match self.inner() {
-            ErrorKind::InvalidKey(_) => Json(ErrorResponse {
-                error: "invalid public key".to_string(),
-            })
+            ErrorKind::InvalidKey(_) => (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: "invalid public key".to_string(),
+                }),
+            )
+                .into_response(),
+            ErrorKind::InvalidJson(rejection) => {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        error: format!(
+                            "invalid json: {}",
+                            rejection
+                                .source()
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| rejection.body_text())
+                        ),
+                    }),
+                )
+            }
             .into_response(),
             _ => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
         }

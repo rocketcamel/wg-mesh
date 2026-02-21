@@ -1,6 +1,7 @@
 mod endpoints;
 mod error;
 mod storage;
+mod utils;
 
 use std::sync::Arc;
 
@@ -51,7 +52,7 @@ async fn run() -> Result<()> {
     let listener = TcpListener::bind("0.0.0.0:8080")
         .await
         .map_err(|e| Error::tcp_bind(e, "0.0.0.0:8080"))?;
-    tracing::info!("listening on 0.0.0.0:8080");
+    tracing::info!("starting api on 0.0.0.0:8080");
     axum::serve(listener, app).await?;
 
     Ok(())
